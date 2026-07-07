@@ -29,7 +29,7 @@ gtag('config', 'G-95X53J9QHS');`}
 })(window, document, "clarity", "script", "PASTE YOUR CLARITY ID HERE");`}
         </Script>
         <title>Rajswa Blog</title>
-        <link rel="icon" href="/favicon.png" />
+        <link rel="icon" type="image/png" href="/favicon.png" />
       </head>
       <body>{children}</body>
     </html>
