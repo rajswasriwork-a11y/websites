@@ -1,0 +1,98 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Manrope:wght@600;700;800&family=JetBrains+Mono:wght@400;500&display=swap');
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-manrope: "Manrope", sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
+  
+  --color-brand-bg: #0D0D0D;
+  --color-brand-card: #181818;
+  --color-brand-primary: #F97316;
+  --color-brand-secondary: #FB923C;
+  --color-brand-highlight: #2A2A2A;
+  --color-brand-dark: #FFFFFF;
+  --color-brand-muted: #A1A1AA;
+}
+
+/* Light Theme overrides when .dark is NOT present */
+:root:not(.dark) {
+  --color-brand-bg: #FFF8F0;
+  --color-brand-card: #FFFFFF;
+  --color-brand-primary: #C46A2D;
+  --color-brand-secondary: #E6A15A;
+  --color-brand-highlight: #FFE8CC;
+  --color-brand-dark: #1F2937;
+  --color-brand-muted: #6B7280;
+}
+
+body {
+  background-color: var(--color-brand-bg);
+  color: var(--color-brand-dark);
+  font-family: "Inter", sans-serif;
+  transition-property: background-color, color, border-color;
+  transition-duration: 300ms;
+}
+
+h1, h2, h3, h4, h5, h6 {
+  font-family: "Manrope", sans-serif;
+}
+
+/* Premium Scrollbars */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-track {
+  background: var(--color-brand-bg);
+}
+::-webkit-scrollbar-thumb {
+  background: var(--color-brand-highlight);
+  border-radius: 9999px;
+  border: 2px solid var(--color-brand-bg);
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--color-brand-primary);
+}
+
+/* custom dynamic markdown structures */
+.markdown-body h2 {
+  font-family: "Manrope", sans-serif;
+  font-weight: 800;
+  color: var(--color-brand-dark);
+  border-bottom: 1px solid var(--color-brand-highlight);
+  padding-bottom: 0.5rem;
+  margin-top: 2rem;
+  margin-bottom: 1rem;
+}
+
+.markdown-body h3 {
+  font-family: "Manrope", sans-serif;
+  font-weight: 700;
+  color: var(--color-brand-dark);
+  margin-top: 1.5rem;
+  margin-bottom: 0.75rem;
+}
+
+.markdown-body p {
+  margin-bottom: 1.25rem;
+  line-height: 1.75;
+}
+
+.markdown-body ul, .markdown-body ol {
+  margin-left: 1.5rem;
+  margin-bottom: 1.25rem;
+  list-style-type: disc;
+}
+
+.markdown-body li {
+  margin-bottom: 0.5rem;
+}
+
+.markdown-body blockquote {
+  border-left: 4px solid var(--color-brand-primary);
+  padding-left: 1rem;
+  color: var(--color-brand-muted);
+  font-style: italic;
+  margin-bottom: 1.25rem;
+}
