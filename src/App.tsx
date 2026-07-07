@@ -28,6 +28,10 @@ export default function App() {
     }
   }, [darkMode]);
 
+  useEffect(() => {
+    document.title = "Rajswa Blog";
+  }, [activeTab, selectedArticle, selectedCaseStudy]);
+
   // Global navigator function for search results or cross-link clicks
   const handleNavigateToItem = (
     type: "article" | "case" | "resource",
