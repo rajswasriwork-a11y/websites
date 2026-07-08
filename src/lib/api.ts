@@ -5,9 +5,12 @@ export interface ApiResponse<T> {
 
 async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   const headers: Record<string, string> = {
-    "Content-Type": "application/json",
     ...(options.headers as Record<string, string> | undefined),
   };
+
+  if (!(options.body instanceof FormData)) {
+    headers["Content-Type"] = "application/json";
+  }
 
   const csrfToken = typeof window !== "undefined" ? sessionStorage.getItem("csrfToken") : null;
   if (csrfToken) {
@@ -132,7 +135,8 @@ export async function deleteTag(id: string) {
 export async function uploadImage(file: File) {
   const formData = new FormData();
   formData.append('image', file);
-  const csrfToken = sessionStorage.getItem('csrfToken');
+  const existingToken = sessionStorage.getItem('csrfToken');
+  const csrfToken = existingToken || (await getCsrfToken());
   const response = await fetch('/api/media/upload', {
     method: 'POST',
     body: formData,
@@ -155,6 +159,37 @@ export async function updateSettings(payload: Record<string, unknown>) {
     method: 'PUT',
     body: JSON.stringify(payload),
   });
+}
+
+export async function submitContactMessage(payload: { name: string; email: string; company?: string; message: string }) {
+  await getCsrfToken();
+  return request<any>('/api/contact', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function fetchContactMessages() {
+  return request<any[]>('/api/contact');
+}
+
+export async function archiveContactMessage(id: string) {
+  return request<any>(`/api/contact/${id}`, {
+    method: 'PUT',
+    body: JSON.stringify({ status: 'archived' }),
+  });
+}
+
+export async function deleteContactMessage(id: string) {
+  return request<any>(`/api/contact/${id}`, { method: 'DELETE' });
+}
+
+export async function fetchAnalyticsOverview() {
+  return request<any>('/api/analytics');
+}
+
+export async function fetchSearchConsole() {
+  return request<any>('/api/search-console');
 }
 
 export async function searchPosts(query: string, category?: string, tag?: string) {

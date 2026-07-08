@@ -1,6 +1,5 @@
 import express from "express";
 import path from "path";
-import { promises as fs } from "fs";
 import { randomUUID } from "crypto";
 import { createServer as createViteServer } from "vite";
 import dotenv from "dotenv";
@@ -23,6 +22,7 @@ interface BlogPost {
   excerpt: string;
   content: string;
   featuredImage?: string;
+  ogImage?: string;
   category: string;
   tags: string[];
   seoTitle?: string;
@@ -31,11 +31,13 @@ interface BlogPost {
   ogTitle?: string;
   ogDescription?: string;
   twitterCard?: string;
+  keywords?: string;
   author?: string;
   publishedAt?: string;
   updatedAt?: string;
   status: "draft" | "published" | "scheduled";
   featured?: boolean;
+  pinned?: boolean;
   readingTime?: string;
   scheduledFor?: string;
 }
@@ -53,10 +55,12 @@ declare module "express-session" {
 }
 
 const PORT = Number(process.env.PORT || 3000);
-const UPLOAD_DIR = path.join(process.cwd(), "public", "uploads");
+const APP_URL = process.env.APP_URL || "http://localhost:3000";
+const SUPABASE_BUCKET = process.env.SUPABASE_STORAGE_BUCKET || "cms-media";
 const DEFAULT_ADMIN_EMAIL = process.env.ADMIN_EMAIL || "admin@example.com";
 const DEFAULT_ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || "ChangeMe123!";
 const SESSION_SECRET = process.env.SESSION_SECRET || "blog-session-secret";
+const SESSION_MAX_AGE = Number(process.env.SESSION_MAX_AGE || 30 * 60 * 1000);
 const DEFAULT_AUTHOR = process.env.DEFAULT_AUTHOR || "Admin";
 let supabaseClient: SupabaseClient | null = null;
 
@@ -75,14 +79,44 @@ function slugify(value: string) {
 }
 
 function sanitizeText(value: string) {
-  return sanitizeHtml(value, {
+  return sanitizeHtml(value || "", {
     allowedTags: [],
     allowedAttributes: {},
   }).trim();
 }
 
-async function ensureUploadDir() {
-  await fs.mkdir(UPLOAD_DIR, { recursive: true });
+function sanitizeSlug(value: string) {
+  return slugify(value || "untitled");
+}
+
+function validateEmail(value: unknown) {
+  const email = typeof value === "string" ? value.trim().toLowerCase() : "";
+  return email.match(/^[^@\s]+@[^@\s]+\.[^@\s]+$/) ? email : "";
+}
+
+async function ensureStorageBucket(supabase: SupabaseClient) {
+  try {
+    await supabase.storage.createBucket(SUPABASE_BUCKET, { public: true });
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : String(error);
+    if (!message.toLowerCase().includes("already exists")) {
+      console.warn("Could not ensure Supabase storage bucket:", message);
+    }
+  }
+}
+
+async function getPublicMediaUrl(supabase: SupabaseClient, filePath: string) {
+  const supabaseUrl = process.env.SUPABASE_URL?.replace(/\/$/, "") || APP_URL;
+  return `${supabaseUrl}/storage/v1/object/public/${SUPABASE_BUCKET}/${encodeURIComponent(filePath)}`;
+}
+
+async function createAuditLog(supabase: SupabaseClient, action: string, details: Record<string, unknown>, email?: string) {
+  await supabase.from("audit_logs").insert({
+    action,
+    details: JSON.stringify(details),
+    user_email: email || null,
+    created_at: new Date().toISOString(),
+  });
 }
 
 async function getSupabaseClient() {
@@ -90,7 +124,7 @@ async function getSupabaseClient() {
     return supabaseClient;
   }
   const supabaseUrl = process.env.SUPABASE_URL;
-  const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY;
+  const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
   if (!supabaseUrl || !supabaseKey) {
     return null;
   }
@@ -101,20 +135,6 @@ async function getSupabaseClient() {
     },
   });
   return supabaseClient;
-}
-
-async function ensureAdminUser(supabase: SupabaseClient) {
-  const email = DEFAULT_ADMIN_EMAIL.toLowerCase();
-  try {
-    const { data: existing } = await supabase.from("users").select("id").eq("email", email).maybeSingle();
-    if (existing) {
-      return;
-    }
-    const passwordHash = await bcrypt.hash(DEFAULT_ADMIN_PASSWORD, 10);
-    await supabase.from("users").insert({ email, password_hash: passwordHash, role: "admin" });
-  } catch (error) {
-    console.warn("Supabase admin user bootstrap skipped:", error);
-  }
 }
 
 async function ensureAdminPasswordHash() {
@@ -139,6 +159,8 @@ function normalizePost(input: Partial<BlogPost>, defaultAuthor: string = DEFAULT
   const now = new Date().toISOString();
   const slugBase = input.slug || slugify(title);
   const slug = slugBase.toLowerCase();
+  const scheduledFor = input.scheduledFor || "";
+  const status = input.status || (scheduledFor ? "scheduled" : "draft");
   return {
     id: input.id || randomUUID(),
     title,
@@ -146,21 +168,24 @@ function normalizePost(input: Partial<BlogPost>, defaultAuthor: string = DEFAULT
     excerpt,
     content,
     featuredImage: input.featuredImage || "",
+    ogImage: input.ogImage || input.featuredImage || "",
     category: input.category || "General",
     tags: Array.isArray(input.tags) ? input.tags : [],
     seoTitle: input.seoTitle || title,
     metaDescription: input.metaDescription || excerpt,
-    canonicalUrl: input.canonicalUrl || `https://example.com/blog/${slug}`,
+    canonicalUrl: input.canonicalUrl || `${APP_URL}/blog/${slug}`,
     ogTitle: input.ogTitle || title,
     ogDescription: input.ogDescription || excerpt,
     twitterCard: input.twitterCard || "summary_large_image",
+    keywords: input.keywords || "",
     author: input.author || defaultAuthor || "Admin",
-    publishedAt: input.publishedAt || now,
+    publishedAt: input.publishedAt || (status === "published" ? now : ""),
     updatedAt: now,
-    status: input.status || "draft",
+    status,
     featured: Boolean(input.featured),
+    pinned: Boolean(input.pinned),
     readingTime: input.readingTime || estimateReadingTime(content),
-    scheduledFor: input.scheduledFor || "",
+    scheduledFor,
   };
 }
 
@@ -178,6 +203,7 @@ function buildPostInputFromRow(row: any, overrides: Partial<BlogPost> = {}): Par
     excerpt: row.excerpt || "",
     content: row.content || "",
     featuredImage: row.featured_image || "",
+    ogImage: row.og_image || row.featured_image || "",
     category: row.categories?.name || "General",
     tags,
     seoTitle: row.seo_title || row.title,
@@ -186,11 +212,13 @@ function buildPostInputFromRow(row: any, overrides: Partial<BlogPost> = {}): Par
     ogTitle: row.og_title || row.title,
     ogDescription: row.og_description || row.excerpt || "",
     twitterCard: row.twitter_card || "summary_large_image",
+    keywords: row.keywords || "",
     author: row.authors?.name || DEFAULT_AUTHOR,
     publishedAt: row.publish_date || row.created_at || "",
     updatedAt: row.last_updated || row.created_at || "",
     status: row.status || "draft",
     featured: Boolean(row.featured),
+    pinned: Boolean(row.pinned),
     readingTime: row.reading_time || estimateReadingTime(row.content || ""),
     scheduledFor: row.scheduled_for || "",
     ...overrides,
@@ -301,24 +329,29 @@ async function getSettings(supabase: SupabaseClient) {
 }
 
 async function startServer() {
-  await ensureUploadDir();
-  const adminPasswordHash = await ensureAdminPasswordHash();
+  await ensureAdminPasswordHash();
   const app = express();
   const supabase = await getSupabaseClient();
   if (supabase) {
-    await ensureAdminUser(supabase);
+    await ensureStorageBucket(supabase);
   }
 
   app.set("trust proxy", 1);
   app.use(helmet());
   app.use(express.json({ limit: "1mb" }));
   app.use(express.urlencoded({ extended: true }));
-  app.use(
+    app.use(
     session({
       secret: SESSION_SECRET,
+      name: "__session",
       resave: false,
       saveUninitialized: false,
-      cookie: { secure: process.env.NODE_ENV === "production", sameSite: true },
+      cookie: {
+        secure: process.env.NODE_ENV === "production",
+        sameSite: "lax",
+        httpOnly: true,
+        maxAge: SESSION_MAX_AGE,
+      },
     })
   );
 
@@ -331,9 +364,7 @@ async function startServer() {
       legacyHeaders: false,
     })
   );
-  app.use("/api/auth/login", rateLimit({ windowMs: 15 * 60 * 1000, max: 20 }));
-
-  app.use("/uploads", express.static(UPLOAD_DIR));
+  app.use("/api/auth/login", rateLimit({ windowMs: 15 * 60 * 1000, max: 20, standardHeaders: true, legacyHeaders: false }));
 
   const upload = multer({
     storage: multer.memoryStorage(),
@@ -378,33 +409,175 @@ async function startServer() {
 
   app.post("/api/auth/login", async (req, res) => {
     const { email, password } = req.body as { email?: string; password?: string };
-    const emailValue = (email || "").toLowerCase();
-    const supabaseClientInstance = await getSupabaseClient();
-
-    if (supabaseClientInstance) {
-      try {
-        const { data: userRow } = await supabaseClientInstance.from("users").select("*").eq("email", emailValue).maybeSingle();
-        if (userRow?.password_hash && (await bcrypt.compare(password || "", userRow.password_hash))) {
-          req.session.user = { email: emailValue, role: userRow.role || "admin" };
-          return res.json({ user: req.session.user });
-        }
-      } catch (error) {
-        console.warn("Supabase login lookup failed:", error);
-      }
+    const emailValue = validateEmail(email);
+    if (!emailValue || !password) {
+      return res.status(400).json({ error: "Email and password are required" });
     }
 
-    const fallbackValid = emailValue === DEFAULT_ADMIN_EMAIL.toLowerCase() && (await bcrypt.compare(password || "", adminPasswordHash));
-    if (!fallbackValid) {
+    if (emailValue !== DEFAULT_ADMIN_EMAIL.toLowerCase()) {
       return res.status(401).json({ error: "Invalid admin credentials" });
     }
-    req.session.user = { email: emailValue, role: "admin" };
-    return res.json({ user: req.session.user });
+
+    const adminPasswordHash = await ensureAdminPasswordHash();
+    const validPassword = await bcrypt.compare(password, adminPasswordHash);
+    if (!validPassword) {
+      return res.status(401).json({ error: "Invalid admin credentials" });
+    }
+
+    const supabaseClientInstance = await getSupabaseClient();
+    req.session.regenerate((err) => {
+      if (err) {
+        return res.status(500).json({ error: "Unable to establish session" });
+      }
+      req.session.user = { email: emailValue, role: "admin" };
+      req.session.cookie.maxAge = SESSION_MAX_AGE;
+      if (supabaseClientInstance) {
+        void createAuditLog(supabaseClientInstance, "login", { email: emailValue }, emailValue);
+      }
+      return res.json({ user: req.session.user });
+    });
   });
 
   app.post("/api/auth/logout", (req, res) => {
     req.session.destroy(() => {
       res.json({ ok: true });
     });
+  });
+
+  app.post("/api/contact", async (req, res) => {
+    const supabaseClientInstance = await getSupabaseClient();
+    if (!supabaseClientInstance) {
+      return res.status(503).json({ error: "Supabase is not configured. Set SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY." });
+    }
+    const name = sanitizeText(req.body.name || "");
+    const email = validateEmail(req.body.email);
+    const company = sanitizeText(req.body.company || "");
+    const message = sanitizeText(req.body.message || "");
+    if (!name || !email || !message) {
+      return res.status(400).json({ error: "Name, email, and message are required" });
+    }
+    const { data, error } = await supabaseClientInstance.from("contact_messages").insert({
+      name,
+      email,
+      company,
+      message,
+      status: "new",
+      created_at: new Date().toISOString(),
+    }).select("*").single();
+    if (error || !data) {
+      return res.status(500).json({ error: error?.message || "Unable to store contact message" });
+    }
+    return res.json({ ok: true, message: "Message sent successfully" });
+  });
+
+  app.get("/api/contact", requireAuth, async (req, res) => {
+    const supabaseClientInstance = await getSupabaseClient();
+    if (!supabaseClientInstance) {
+      return res.status(503).json({ error: "Supabase is not configured. Set SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY." });
+    }
+    const { data, error } = await supabaseClientInstance.from("contact_messages").select("*").order("created_at", { ascending: false });
+    if (error) {
+      return res.status(500).json({ error: error.message });
+    }
+    return res.json(data || []);
+  });
+
+  app.put("/api/contact/:id", requireAuth, async (req, res) => {
+    const supabaseClientInstance = await getSupabaseClient();
+    if (!supabaseClientInstance) {
+      return res.status(503).json({ error: "Supabase is not configured. Set SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY." });
+    }
+    const { data, error } = await supabaseClientInstance.from("contact_messages").update({
+      status: sanitizeText(req.body.status || "archived"),
+      updated_at: new Date().toISOString(),
+    }).eq("id", req.params.id).select("*").single();
+    if (error || !data) {
+      return res.status(500).json({ error: error?.message || "Unable to update message status" });
+    }
+    return res.json(data);
+  });
+
+  app.delete("/api/contact/:id", requireAuth, async (req, res) => {
+    const supabaseClientInstance = await getSupabaseClient();
+    if (!supabaseClientInstance) {
+      return res.status(503).json({ error: "Supabase is not configured. Set SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY." });
+    }
+    const { error } = await supabaseClientInstance.from("contact_messages").delete().eq("id", req.params.id);
+    if (error) {
+      return res.status(500).json({ error: error.message });
+    }
+    return res.json({ ok: true });
+  });
+
+  app.get("/api/analytics", requireAuth, async (req, res) => {
+    const supabaseClientInstance = await getSupabaseClient();
+    if (!supabaseClientInstance) {
+      return res.status(503).json({ error: "Supabase is not configured. Set SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY." });
+    }
+    const totalVisitors = 0;
+    const pageViews = 0;
+    const topPages = [];
+    const trafficSources = [];
+    const countries = [];
+    return res.json({ totalVisitors, pageViews, topPages, trafficSources, countries, message: "Analytics placeholder. Connect Google Analytics 4 Data API for real-time data." });
+  });
+
+  app.get("/api/search-console", requireAuth, async (_req, res) => {
+    return res.json({
+      indexedPages: 0,
+      sitemapStatus: "pending",
+      topQueries: [],
+      topPages: [],
+      ctr: 0,
+      impressions: 0,
+      clicks: 0,
+      averagePosition: 0,
+      message: "Search Console integration is not connected yet. This endpoint is a placeholder for future integration.",
+    });
+  });
+
+  app.get("/api/media", requireAuth, async (_req, res) => {
+    const supabaseClientInstance = await getSupabaseClient();
+    if (!supabaseClientInstance) {
+      return res.status(503).json({ error: "Supabase is not configured. Set SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY." });
+    }
+    const { data, error } = await supabaseClientInstance.from("media").select("*").order("created_at", { ascending: false });
+    if (error) {
+      return res.status(500).json({ error: error.message });
+    }
+    return res.json(data || []);
+  });
+
+  app.put("/api/media/:id", requireAuth, async (req, res) => {
+    const supabaseClientInstance = await getSupabaseClient();
+    if (!supabaseClientInstance) {
+      return res.status(503).json({ error: "Supabase is not configured. Set SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY." });
+    }
+    const { data, error } = await supabaseClientInstance.from("media").update({
+      alt: sanitizeText(req.body.alt || ""),
+      caption: sanitizeText(req.body.caption || ""),
+    }).eq("id", req.params.id).select("*").single();
+    if (error || !data) {
+      return res.status(500).json({ error: error?.message || "Unable to update media metadata" });
+    }
+    return res.json(data);
+  });
+
+  app.delete("/api/media/:id", requireAuth, async (req, res) => {
+    const supabaseClientInstance = await getSupabaseClient();
+    if (!supabaseClientInstance) {
+      return res.status(503).json({ error: "Supabase is not configured. Set SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY." });
+    }
+    const { data, error } = await supabaseClientInstance.from("media").select("storage_path").eq("id", req.params.id).maybeSingle();
+    if (error || !data) {
+      return res.status(404).json({ error: "Media not found" });
+    }
+    await supabaseClientInstance.storage.from(SUPABASE_BUCKET).remove([data.storage_path]);
+    const { error: deleteError } = await supabaseClientInstance.from("media").delete().eq("id", req.params.id);
+    if (deleteError) {
+      return res.status(500).json({ error: deleteError.message });
+    }
+    return res.json({ ok: true });
   });
 
   app.get("/api/posts", async (req, res) => {
@@ -755,13 +928,29 @@ async function startServer() {
       .toBuffer();
     const ext = path.extname(req.file.originalname || ".jpg") || ".jpg";
     const filename = `${randomUUID()}${ext}`;
-    const filePath = path.join(UPLOAD_DIR, filename);
-    await fs.writeFile(filePath, optimized);
-    const publicUrl = `/uploads/${filename}`;
-    const { data, error } = await supabaseClientInstance.from("media").insert({ original_name: req.file.originalname, url: publicUrl, alt: req.body.alt || "Uploaded image", caption: req.body.caption || "", created_at: new Date().toISOString() }).select("*").single();
+    const storagePath = `media/${filename}`;
+    const { error: uploadError } = await supabaseClientInstance.storage.from(SUPABASE_BUCKET).upload(storagePath, optimized, {
+      contentType: req.file.mimetype || "image/jpeg",
+      cacheControl: "public, max-age=31536000",
+      upsert: false,
+    });
+    if (uploadError) {
+      return res.status(500).json({ error: uploadError.message });
+    }
+    const publicUrl = await getPublicMediaUrl(supabaseClientInstance, storagePath);
+    const generatedAlt = sanitizeText(req.body.alt || req.file.originalname || "Uploaded image");
+    const { data, error } = await supabaseClientInstance.from("media").insert({
+      original_name: req.file.originalname,
+      url: publicUrl,
+      alt: generatedAlt,
+      caption: sanitizeText(req.body.caption || ""),
+      storage_path: storagePath,
+      created_at: new Date().toISOString(),
+    }).select("*").single();
     if (error || !data) {
       return res.status(500).json({ error: error?.message || "Unable to save media metadata" });
     }
+    await createAuditLog(supabaseClientInstance, "media_upload", { originalName: req.file.originalname, url: publicUrl }, req.session.user?.email);
     return res.json({ url: publicUrl, media: { id: data.id, originalName: data.original_name, url: data.url, alt: data.alt || "", caption: data.caption || "", createdAt: data.created_at } });
   });
 

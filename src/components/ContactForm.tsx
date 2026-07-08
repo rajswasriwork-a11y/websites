@@ -1,5 +1,6 @@
 import React, { useState } from "react";
 import { Mail, CheckCircle2, ArrowRight, Building } from "lucide-react";
+import { submitContactMessage } from "../lib/api";
 import InteractivePlanner from "./InteractivePlanner";
 
 interface ContactFormProps {
@@ -13,19 +14,31 @@ export default function ContactForm({ darkMode }: ContactFormProps) {
   const [message, setMessage] = useState("");
   const [loading, setLoading] = useState(false);
   const [submitted, setSubmitted] = useState(false);
+  const [errorMessage, setErrorMessage] = useState("");
+  const [statusMessage, setStatusMessage] = useState("");
 
-  const handleInquiry = (e: React.FormEvent) => {
+  const handleInquiry = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!name.trim() || !email.trim()) return;
+    setErrorMessage("");
+    setStatusMessage("");
+    if (!name.trim() || !email.trim()) {
+      setErrorMessage("Name and email are required.");
+      return;
+    }
     setLoading(true);
-    setTimeout(() => {
-      setLoading(false);
+    try {
+      await submitContactMessage({ name, email, company, message });
       setSubmitted(true);
+      setStatusMessage("Your message was sent successfully.");
       setName("");
       setEmail("");
       setCompany("");
       setMessage("");
-    }, 900);
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : "Unable to send message. Please try again later.");
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -134,14 +147,16 @@ export default function ContactForm({ darkMode }: ContactFormProps) {
                   />
                 </div>
 
+                {errorMessage ? <p className="text-sm text-red-400">{errorMessage}</p> : null}
                 <button
                   type="submit"
                   disabled={loading}
                   className="flex w-full items-center justify-center space-x-2 rounded-xl bg-brand-primary py-3.5 font-sans text-sm font-semibold text-white hover:bg-opacity-92 shadow-md shadow-brand-primary/10 transition-all cursor-pointer"
                 >
-                  <span>{loading ? "Registering..." : "Submit Inquiry"}</span>
+                  <span>{loading ? "Sending..." : "Submit Inquiry"}</span>
                   <ArrowRight className="h-4 w-4" />
                 </button>
+                {statusMessage ? <p className="mt-3 text-sm text-green-400">{statusMessage}</p> : null}
               </form>
             )}
           </div>

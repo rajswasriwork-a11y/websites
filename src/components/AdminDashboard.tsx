@@ -441,7 +441,7 @@ export default function AdminDashboard() {
           {activeView === 'media' ? (
             <section className="rounded-3xl border border-zinc-800 bg-zinc-900 p-6">
               <h2 className="text-xl font-semibold">Media library</h2>
-              <p className="mt-3 text-sm text-zinc-400">Upload images to keep your featured visuals and article assets in one place. Files are optimized and stored in the local uploads directory for development.</p>
+              <p className="mt-3 text-sm text-zinc-400">Upload images to keep your featured visuals and article assets in one place. Files are optimized and stored in Supabase storage for production-ready media delivery.</p>
               <input type="file" onChange={handleUpload} className="mt-6 w-full rounded-2xl border border-zinc-800 bg-zinc-950 px-4 py-3" />
               {uploading ? <p className="mt-3 text-sm text-orange-400">Optimizing image…</p> : null}
             </section>
