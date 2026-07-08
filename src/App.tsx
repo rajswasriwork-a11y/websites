@@ -10,6 +10,8 @@ import CaseStudyDetail from "./components/CaseStudyDetail";
 import PortfolioView from "./components/PortfolioView";
 import ResourcesList from "./components/ResourcesList";
 import ContactForm from "./components/ContactForm";
+import BlogRouter from "./components/BlogRouter";
+import AdminDashboard from "./components/AdminDashboard";
 import { Article, CaseStudy } from "./types";
 import { articles, caseStudies } from "./data";
 
@@ -18,6 +20,23 @@ export default function App() {
   const [darkMode, setDarkMode] = useState(true); // Default to premium dark mode!
   const [selectedArticle, setSelectedArticle] = useState<Article | null>(null);
   const [selectedCaseStudy, setSelectedCaseStudy] = useState<CaseStudy | null>(null);
+
+  const getRouteFromPath = (pathname: string) => {
+    if (pathname.startsWith("/admin")) return "admin";
+    if (pathname.startsWith("/blog")) return "blog";
+    return "home";
+  };
+
+  const setActiveRoute = (tab: string) => {
+    setActiveTab(tab);
+    if (tab === "blog") {
+      window.history.pushState({}, "", "/blog");
+    } else if (tab === "admin") {
+      window.history.pushState({}, "", "/admin");
+    } else if (tab === "home") {
+      window.history.pushState({}, "", "/");
+    }
+  };
 
   // Maintain Dark Mode Class on Document element
   useEffect(() => {
@@ -32,6 +51,16 @@ export default function App() {
     document.title = "Rajswa Blog";
   }, [activeTab, selectedArticle, selectedCaseStudy]);
 
+  useEffect(() => {
+    const syncRouteFromPath = () => {
+      const route = getRouteFromPath(window.location.pathname);
+      setActiveTab(route);
+    };
+    syncRouteFromPath();
+    window.addEventListener("popstate", syncRouteFromPath);
+    return () => window.removeEventListener("popstate", syncRouteFromPath);
+  }, []);
+
   // Global navigator function for search results or cross-link clicks
   const handleNavigateToItem = (
     type: "article" | "case" | "resource",
@@ -41,18 +70,18 @@ export default function App() {
       const art = articles.find((a) => a.slug === slugOrId);
       if (art) {
         setSelectedArticle(art);
-        setActiveTab("blog");
+        setActiveRoute("blog");
         window.scrollTo({ top: 0, behavior: "smooth" });
       }
     } else if (type === "case") {
       const cs = caseStudies.find((c) => c.slug === slugOrId);
       if (cs) {
         setSelectedCaseStudy(cs);
-        setActiveTab("case-studies");
+        setActiveRoute("case-studies");
         window.scrollTo({ top: 0, behavior: "smooth" });
       }
     } else if (type === "resource") {
-      setActiveTab("resources");
+      setActiveRoute("resources");
       window.scrollTo({ top: 0, behavior: "smooth" });
     }
   };
@@ -74,7 +103,7 @@ export default function App() {
       <Header
         activeTab={activeTab}
         setActiveTab={(tab) => {
-          setActiveTab(tab);
+          setActiveRoute(tab);
           setSelectedArticle(null);
           setSelectedCaseStudy(null);
         }}
@@ -109,14 +138,14 @@ export default function App() {
 
                 <div className="mt-8 flex flex-col sm:flex-row items-center justify-center gap-3">
                   <button
-                    onClick={() => { setActiveTab("blog"); setSelectedArticle(null); }}
+                    onClick={() => { setActiveRoute("blog"); setSelectedArticle(null); }}
                     className="w-full sm:w-auto inline-flex items-center justify-center space-x-2 rounded-xl bg-brand-primary px-6 py-3.5 font-sans text-xs font-bold uppercase tracking-wider text-white shadow-lg shadow-orange-500/10 hover:bg-opacity-90 transition-all cursor-pointer"
                   >
                     <span>Read My Blog</span>
                     <ArrowRight className="h-4 w-4" />
                   </button>
                   <button
-                    onClick={() => { setActiveTab("portfolio"); }}
+                    onClick={() => { setActiveRoute("portfolio"); }}
                     className="w-full sm:w-auto inline-flex items-center justify-center space-x-2 rounded-xl bg-[#181818] border border-[#2A2A2A] px-6 py-3.5 font-sans text-xs font-bold uppercase tracking-wider text-[#FFFFFF] shadow-sm hover:bg-[#2A2A2A] transition-all cursor-pointer dark:bg-zinc-900"
                   >
                     <span>View Projects</span>
@@ -130,7 +159,7 @@ export default function App() {
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                   {/* Card 1 */}
                   <div 
-                    onClick={() => setActiveTab("case-studies")}
+                    onClick={() => setActiveRoute("case-studies")}
                     className="p-6 rounded-2xl border border-[#2A2A2A] bg-[#181818] hover:border-brand-primary/40 cursor-pointer transition-all flex flex-col justify-between h-48 group"
                   >
                     <div>
@@ -151,7 +180,7 @@ export default function App() {
 
                   {/* Card 2 */}
                   <div 
-                    onClick={() => setActiveTab("blog")}
+                    onClick={() => setActiveRoute("blog")}
                     className="p-6 rounded-2xl border border-[#2A2A2A] bg-[#181818] hover:border-brand-primary/40 cursor-pointer transition-all flex flex-col justify-between h-48 group"
                   >
                     <div>
@@ -172,7 +201,7 @@ export default function App() {
 
                   {/* Card 3 */}
                   <div 
-                    onClick={() => setActiveTab("resources")}
+                    onClick={() => setActiveRoute("resources")}
                     className="p-6 rounded-2xl border border-[#2A2A2A] bg-[#181818] hover:border-brand-primary/40 cursor-pointer transition-all flex flex-col justify-between h-48 group"
                   >
                     <div>
@@ -205,7 +234,7 @@ export default function App() {
                     </p>
                   </div>
                   <button
-                    onClick={() => { setActiveTab("blog"); setSelectedArticle(null); }}
+                    onClick={() => { setActiveRoute("blog"); setSelectedArticle(null); }}
                     className="font-sans text-xs font-bold text-brand-primary hover:underline flex items-center gap-1 mt-2 md:mt-0 cursor-pointer"
                   >
                     <span>See all posts ({articles.length})</span>
@@ -262,7 +291,7 @@ export default function App() {
                     </p>
                   </div>
                   <button
-                    onClick={() => { setActiveTab("case-studies"); setSelectedCaseStudy(null); }}
+                    onClick={() => { setActiveRoute("case-studies"); setSelectedCaseStudy(null); }}
                     className="font-sans text-xs font-bold text-brand-primary hover:underline flex items-center gap-1 mt-2 md:mt-0 cursor-pointer"
                   >
                     <span>See all case studies ({caseStudies.length})</span>
@@ -320,17 +349,10 @@ export default function App() {
           {activeTab === "about" && <AboutSection />}
 
           {/* 3. BLOG TAB */}
-          {activeTab === "blog" && (
-            selectedArticle ? (
-              <ArticleDetail
-                article={selectedArticle}
-                onBack={handleBackToArticles}
-                onSelectArticle={setSelectedArticle}
-              />
-            ) : (
-              <ArticlesList onSelectArticle={setSelectedArticle} />
-            )
-          )}
+          {activeTab === "blog" && <BlogRouter />}
+
+          {/* 3b. ADMIN TAB */}
+          {activeTab === "admin" && <AdminDashboard />}
 
           {/* 4. PORTFOLIO TAB */}
           {activeTab === "portfolio" && <PortfolioView />}
@@ -358,7 +380,7 @@ export default function App() {
       {/* Footer block */}
       <Footer
         setActiveTab={(tab) => {
-          setActiveTab(tab);
+          setActiveRoute(tab);
           setSelectedArticle(null);
           setSelectedCaseStudy(null);
         }}

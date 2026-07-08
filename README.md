@@ -1,20 +1,38 @@
-<div align="center">
-<img width="1200" height="475" alt="GHBanner" src="https://ai.google.dev/static/site-assets/images/share-ais-513315318.png" />
-</div>
+# Production-ready blog CMS
 
-# Run and deploy your AI Studio app
+This project has been upgraded into a Vite + Express blog platform with:
 
-This contains everything you need to run your app locally.
+- a secure admin login flow
+- a protected admin dashboard
+- blog post CRUD, draft/publish, delete, and duplicate actions
+- category and tag management
+- image upload and optimization
+- SEO metadata, sitemap, robots, and RSS endpoints
+- a public blog listing and article view
 
-View your app in AI Studio: https://ai.studio/apps/c0b0a390-175a-4059-ab0e-14166d08d3b0
+## Local development
 
-## Run Locally
+1. Install dependencies: `npm install`
+2. Set the following environment variables:
+   - `ADMIN_EMAIL`
+   - `ADMIN_PASSWORD`
+   - `SESSION_SECRET`
+   - `CSRF_SECRET`
+   - `SUPABASE_URL`
+   - `SUPABASE_SERVICE_ROLE_KEY` (or `SUPABASE_ANON_KEY`)
+   - `GEMINI_API_KEY` (optional for the AI endpoint)
+3. Apply the SQL from [supabase/schema.sql](supabase/schema.sql) in your Supabase project.
+4. Start the server: `npm run dev`
+5. Open `http://localhost:3000/`
 
-**Prerequisites:**  Node.js
+## Admin access
 
+- Public blog route: `/blog`
+- Admin route: `/admin`
+- Login uses the configured admin email and password.
 
-1. Install dependencies:
-   `npm install`
-2. Set the `GEMINI_API_KEY` in [.env.local](.env.local) to your Gemini API key
-3. Run the app:
-   `npm run dev`
+## Production notes
+
+- The app now uses Supabase PostgreSQL for blog posts, categories, tags, media metadata, settings, and admin authentication.
+- The server serves `/sitemap.xml`, `/robots.txt`, and `/rss.xml` automatically.
+- Uploaded media is stored under `public/uploads` and its metadata is persisted in Supabase.
